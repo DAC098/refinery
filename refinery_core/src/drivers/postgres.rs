@@ -48,6 +48,24 @@ impl Transaction for PgClient {
     }
 }
 
+impl<'a> Transaction for PgTransaction<'a> {
+    type Error = PgError;
+
+    fn execute<'b, T: Iterator<Item = &'b str>>(
+        &mut self,
+        queries: T,
+    ) -> Result<usize, Self::Error> {
+        let mut transaction = PgTransaction::transaction(self)?;
+        let mut count = 0;
+        for query in queries {
+            PgTransaction::batch_execute(&mut transaction, query)?;
+            count += 1;
+        }
+        transaction.commit()?;
+        Ok(count as usize)
+    }
+}
+
 impl Query<Vec<Migration>> for PgClient {
     fn query(&mut self, query: &str) -> Result<Vec<Migration>, Self::Error> {
         let mut transaction = PgClient::transaction(self)?;
@@ -57,4 +75,14 @@ impl Query<Vec<Migration>> for PgClient {
     }
 }
 
+impl<'a> Query<Vec<Migration>> for PgTransaction<'a> {
+    fn query(&mut self, query: &str) -> Result<Vec<Migration>, Self::Error> {
+        let mut transaction = PgTransaction::transaction(self)?;
+        let applied = query_applied_migrations(&mut transaction, query)?;
+        transaction.commit()?;
+        Ok(applied)
+    }
+}
+
 impl Migrate for PgClient {}
+impl<'a> Migrate for PgTransaction<'a> {}

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio_postgres::error::Error as PgError;
-use tokio_postgres::{Client, Transaction as PgTransaction};
+use tokio_postgres::{Client, GenericClient, Transaction as PgTransaction};
 
 async fn query_applied_migrations(
     transaction: &PgTransaction<'_>,
@@ -51,6 +51,25 @@ impl AsyncTransaction for Client {
 }
 
 #[async_trait]
+impl AsyncTransaction for PgTransaction {
+    type Error = PgError;
+
+    async fn execute<'a, T: Iterator<Item = &'a str> + Send>(
+        &mut self,
+        queries: T,
+    ) -> Result<usize, Self::Error> {
+        let transaction = self.transaction().await?;
+        let mut count = 0;
+        for query in queries {
+            transaction.batch_execute(query).await?;
+            count += 1
+        }
+        transaction.commit().await?;
+        Ok(count as usize)
+    }
+}
+
+#[async_trait]
 impl AsyncQuery<Vec<Migration>> for Client {
     async fn query(
         &mut self,
@@ -63,4 +82,18 @@ impl AsyncQuery<Vec<Migration>> for Client {
     }
 }
 
+#[async_trait]
+impl AsyncQuery<Vec<Migration>> for PgTransaction {
+    async fn query(
+        &mut self,
+        query: &str,
+    ) -> Result<Vec<Migration>, <Self as AsyncTransaction>::Error> {
+        let transaction = self.transaction().await?;
+        let applied = query_applied_migrations(&transaction, query).await?;
+        transaction.commit().await?;
+        Ok(applied)
+    }
+}
+
 impl AsyncMigrate for Client {}
+impl AsyncMigrate for PgTransaction {}
