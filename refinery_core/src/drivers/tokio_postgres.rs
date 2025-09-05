@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio_postgres::error::Error as PgError;
-use tokio_postgres::{Client, GenericClient, Transaction as PgTransaction};
+use tokio_postgres::{Client, Transaction as PgTransaction};
 
 async fn query_applied_migrations(
     transaction: &PgTransaction<'_>,
@@ -51,10 +51,10 @@ impl AsyncTransaction for Client {
 }
 
 #[async_trait]
-impl AsyncTransaction for PgTransaction {
+impl<'a> AsyncTransaction for PgTransaction<'a> {
     type Error = PgError;
 
-    async fn execute<'a, T: Iterator<Item = &'a str> + Send>(
+    async fn execute<'b, T: Iterator<Item = &'b str> + Send>(
         &mut self,
         queries: T,
     ) -> Result<usize, Self::Error> {
@@ -83,7 +83,7 @@ impl AsyncQuery<Vec<Migration>> for Client {
 }
 
 #[async_trait]
-impl AsyncQuery<Vec<Migration>> for PgTransaction {
+impl<'a> AsyncQuery<Vec<Migration>> for PgTransaction<'a> {
     async fn query(
         &mut self,
         query: &str,
@@ -96,4 +96,4 @@ impl AsyncQuery<Vec<Migration>> for PgTransaction {
 }
 
 impl AsyncMigrate for Client {}
-impl AsyncMigrate for PgTransaction {}
+impl<'a> AsyncMigrate for PgTransaction<'a> {}
